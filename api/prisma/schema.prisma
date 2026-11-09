@@ -1,0 +1,104 @@
+generator client {
+    provider = "prisma-client"
+    output   = "../src/generated/prisma"
+}
+
+datasource db {
+    provider = "postgresql"
+}
+
+// ───────────── Enums ─────────────
+
+enum Role {
+    ADMIN
+    MANAGER
+    CASHIER
+    INVENTORY_STAFF
+}
+
+enum UserStatus {
+    ACTIVE
+    INACTIVE
+}
+
+enum ProductStatus {
+    ACTIVE
+    DRAFT
+    ARCHIVED
+}
+
+enum AuditAction {
+    LOGIN
+    LOGIN_FAILED
+    PASSWORD_CHANGE
+    CREATE
+    UPDATE
+    DELETE
+}
+
+// ───────────── Models ─────────────
+
+model User {
+    id           String     @id @default(cuid())
+    email        String     @unique
+    passwordHash String
+    name         String
+    role         Role       @default(CASHIER)
+    status       UserStatus @default(ACTIVE)
+
+    // Bump to invalidate every token issued before this point
+    tokenVersion Int @default(0)
+
+    // Who created this account
+    createdById  String?
+    createdBy    User?   @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+    createdUsers User[]  @relation("UserCreatedBy")
+
+    createdProducts Product[]  @relation("ProductCreatedBy")
+    auditLogs       AuditLog[] @relation("AuditLogUser")
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([createdById])
+}
+
+model Product {
+    id          String        @id @default(cuid())
+    sku         String        @unique
+    barcode     String?       @unique
+    name        String
+    slug        String        @unique
+    description String?
+    price       Decimal       @db.Decimal(12, 2)
+    status      ProductStatus @default(ACTIVE)
+
+    createdById String?
+    createdBy   User?   @relation("ProductCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([createdById])
+    @@index([name])
+}
+
+model AuditLog {
+    id        String      @id @default(cuid())
+    action    AuditAction
+    entity    String? // e.g. "User", "Product"
+    entityId  String? // id of the affected record
+    changes   Json? // before/after values, or the attempted email on LOGIN_FAILED
+    ipAddress String?
+    userAgent String?
+
+    // Null for failed logins with an unknown email
+    userId String?
+    user   User?   @relation("AuditLogUser", fields: [userId], references: [id], onDelete: SetNull)
+
+    createdAt DateTime @default(now())
+
+    @@index([userId, createdAt])
+    @@index([entity, entityId])
+    @@index([action, createdAt])
+}
